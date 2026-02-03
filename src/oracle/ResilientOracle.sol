@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.10;
+pragma solidity 0.8.28;
 
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
@@ -34,6 +34,9 @@ isValid = anchorRatio <= upperBoundAnchorRatio && anchorRatio >= lowerBoundAncho
  * oracle to be stagnant and treat it like it's disabled.
  */
 contract ResilientOracle is OwnableUpgradeable, UUPSUpgradeable, OracleInterface {
+  constructor() {
+    _disableInitializers();
+  }
   /**
    * @dev Oracle roles:
    * **main**: The most trustworthy price source
@@ -227,12 +230,17 @@ contract ResilientOracle is OwnableUpgradeable, UUPSUpgradeable, OracleInterface
    */
   function getPriceFromOracle(address oracle, uint256 tolerance) external view returns (uint256) {
     try AggregatorV3Interface(oracle).latestRoundData() returns (
-      uint80,
+      uint80 roundId,
       int256 answer,
-      uint256,
+      uint256 startedAt,
       uint256 updatedAt,
-      uint80
+      uint80 answeredInRound
     ) {
+      if (answer <= 0) return INVALID_PRICE;
+      if (updatedAt == 0 || updatedAt > block.timestamp) return INVALID_PRICE;
+      if (answeredInRound < roundId) return INVALID_PRICE;
+      if (startedAt == 0 || startedAt > updatedAt) return INVALID_PRICE;
+
       if (tolerance != 0 && block.timestamp - updatedAt > tolerance) {
         return INVALID_PRICE;
       }

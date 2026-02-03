@@ -28,6 +28,14 @@ library EventsLib {
   /// @param lltv The LLTV that was enabled.
   event EnableLltv(uint256 lltv);
 
+  /// @notice Emitted when disabling an IRM.
+  /// @param irm The IRM that was disabled.
+  event DisableIrm(address indexed irm);
+
+  /// @notice Emitted when disabling an LLTV.
+  /// @param lltv The LLTV that was disabled.
+  event DisableLltv(uint256 lltv);
+
   /// @notice Emitted when add a liquidate whitelist.
   event AddLiquidationWhitelist(Id indexed id, address indexed account);
 

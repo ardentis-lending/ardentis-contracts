@@ -106,18 +106,17 @@ contract VaultAllocator is UUPSUpgradeable, AccessControlEnumerableUpgradeable, 
   function transferFee(address vault, address payable feeRecipient) external onlyAdminOrVaultOwner(vault) {
     uint256 claimed = accruedFee[vault];
     accruedFee[vault] = 0;
-    feeRecipient.transfer(claimed);
+    (bool success, ) = feeRecipient.call{ value: claimed }("");
+    require(success, "Transfer failed");
     emit EventsLib.TransferFee(msg.sender, vault, claimed, feeRecipient);
   }
-
-  /* PUBLIC */
 
   /// @inheritdoc IVaultAllocatorBase
   function reallocateTo(
     address vault,
     Withdrawal[] calldata withdrawals,
     MarketParams calldata supplyMarketParams
-  ) external payable {
+  ) external payable onlyAdminOrVaultOwner(vault) {
     if (msg.value != fee[vault]) revert ErrorsLib.IncorrectFee();
     if (msg.value > 0) accruedFee[vault] += msg.value;
 

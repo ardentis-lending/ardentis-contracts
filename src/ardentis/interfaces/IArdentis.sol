@@ -70,12 +70,17 @@ interface IArdentisBase {
   function nonce(address authorizer) external view returns (uint256);
 
   /// @notice Enables `irm` as a possible IRM for market creation.
-  /// @dev Warning: It is not possible to disable an IRM.
   function enableIrm(address irm) external;
 
   /// @notice Enables `lltv` as a possible LLTV for market creation.
-  /// @dev Warning: It is not possible to disable a LLTV.
   function enableLltv(uint256 lltv) external;
+
+
+  /// @notice Disables `irm` as a possible IRM for market creation.
+  function disableIrm(address irm) external;
+
+  /// @notice Disables `lltv` as a possible LLTV for market creation.
+  function disableLltv(uint256 lltv) external;
 
   /// @notice Sets the `newFee` for the given market `marketParams`.
   /// @param newFee The new fee, scaled by WAD.

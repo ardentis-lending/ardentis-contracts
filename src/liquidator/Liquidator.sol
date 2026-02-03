@@ -209,7 +209,7 @@ contract Liquidator is UUPSUpgradeable, AccessControlUpgradeable, ILiquidator {
     require(actualAmountIn <= amountIn, ExceedAmount());
     require(actualAmountOut >= amountOutMin, NoProfit());
 
-    emit SellToken(pair, BNB_ADDRESS, tokenOut, amountIn, actualAmountOut);
+    emit SellToken(pair, BNB_ADDRESS, tokenOut, actualAmountIn, actualAmountOut);
   }
 
   /// @dev flash liquidates a position.

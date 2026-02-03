@@ -1,5 +1,5 @@
 //SPDX-License-Identifier: MIT
-pragma solidity ^0.8.10;
+pragma solidity 0.8.28;
 
 import { AccessControlEnumerableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlEnumerableUpgradeable.sol";
 import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
@@ -37,6 +37,10 @@ contract LendingRevenueDistributor is AccessControlEnumerableUpgradeable, Pausab
   );
 
   event EmergencyWithdrawn(address indexed sender, address indexed asset, uint256 amount);
+
+  event SetDistributePercentage(address indexed caller, uint256 oldPercentage, uint256 newPercentage);
+  event SetRevenueReceiver(address indexed caller, address oldReceiver, address newReceiver);
+  event SetRiskFundReceiver(address indexed caller, address oldReceiver, address newReceiver);
 
   /// @custom:oz-upgrades-unsafe-allow constructor
   constructor() {
@@ -126,7 +130,9 @@ contract LendingRevenueDistributor is AccessControlEnumerableUpgradeable, Pausab
     require(newDistributePercentage <= DENOMINATOR, "invalid distributePercentage");
     require(newDistributePercentage != distributePercentage, ErrorsLib.ALREADY_SET);
 
+    uint256 oldPercentage = distributePercentage;
     distributePercentage = newDistributePercentage;
+    emit SetDistributePercentage(msg.sender, oldPercentage, newDistributePercentage);
   }
 
   /// @dev Change the revenue receiver address
@@ -134,7 +140,9 @@ contract LendingRevenueDistributor is AccessControlEnumerableUpgradeable, Pausab
     require(newRevenueReceiver != address(0), ErrorsLib.ZERO_ADDRESS);
     require(newRevenueReceiver != revenueReceiver, ErrorsLib.ALREADY_SET);
 
+    address oldReceiver = revenueReceiver;
     revenueReceiver = newRevenueReceiver;
+    emit SetRevenueReceiver(msg.sender, oldReceiver, newRevenueReceiver);
   }
 
   /// @dev Change the risk fund receiver address
@@ -142,7 +150,9 @@ contract LendingRevenueDistributor is AccessControlEnumerableUpgradeable, Pausab
     require(newRiskFundReceiver != address(0), ErrorsLib.ZERO_ADDRESS);
     require(newRiskFundReceiver != riskFundReceiver, ErrorsLib.ALREADY_SET);
 
+    address oldReceiver = riskFundReceiver;
     riskFundReceiver = newRiskFundReceiver;
+    emit SetRiskFundReceiver(msg.sender, oldReceiver, newRiskFundReceiver);
   }
 
   /// @dev Emergency withdraw assets from the contract
@@ -152,9 +162,10 @@ contract LendingRevenueDistributor is AccessControlEnumerableUpgradeable, Pausab
 
     for (uint256 i = 0; i < assets.length; i++) {
       if (assets[i] == address(0) && address(this).balance > 0) {
-        (bool success, ) = msg.sender.call{ value: address(this).balance }("");
+        uint256 balance = address(this).balance;
+        (bool success, ) = msg.sender.call{ value: balance }("");
         require(success, "Transfer failed");
-        emit EmergencyWithdrawn(msg.sender, assets[i], address(this).balance);
+        emit EmergencyWithdrawn(msg.sender, assets[i], balance);
         continue;
       }
 

@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT
-// Powered by Morpho - Based on Morpho Blue smart contracts
 pragma solidity 0.8.28;
 
 import { AccessControlEnumerableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/extensions/AccessControlEnumerableUpgradeable.sol";
@@ -119,6 +118,15 @@ contract Ardentis is
   }
 
   /// @inheritdoc IArdentisBase
+  function disableIrm(address irm) external onlyRole(MANAGER) {
+    require(isIrmEnabled[irm], ErrorsLib.ALREADY_SET);
+
+    isIrmEnabled[irm] = false;
+
+    emit EventsLib.DisableIrm(irm);
+  }
+
+  /// @inheritdoc IArdentisBase
   function enableLltv(uint256 lltv) external onlyRole(MANAGER) {
     require(!isLltvEnabled[lltv], ErrorsLib.ALREADY_SET);
     require(lltv < WAD, ErrorsLib.MAX_LLTV_EXCEEDED);
@@ -126,6 +134,16 @@ contract Ardentis is
     isLltvEnabled[lltv] = true;
 
     emit EventsLib.EnableLltv(lltv);
+  }
+
+  /// @inheritdoc IArdentisBase
+  function disableLltv(uint256 lltv) external onlyRole(MANAGER) {
+    require(isLltvEnabled[lltv], ErrorsLib.ALREADY_SET);
+    require(lltv < WAD, ErrorsLib.MAX_LLTV_EXCEEDED);
+
+    isLltvEnabled[lltv] = false;
+
+    emit EventsLib.DisableLltv(lltv);
   }
 
   /// @inheritdoc IArdentisBase
@@ -233,6 +251,12 @@ contract Ardentis is
     require(market[id].lastUpdate != 0, ErrorsLib.MARKET_NOT_CREATED);
     require(provider != address(0), ErrorsLib.ZERO_ADDRESS);
     require(providers[id][token] == address(0), ErrorsLib.ALREADY_SET);
+    
+    MarketParams memory marketParams = idToMarketParams[id];
+    require(
+        token == marketParams.loanToken || token == marketParams.collateralToken,
+        ErrorsLib.INVALID_PROVIDER_TOKEN
+    );
 
     providers[id][token] = provider;
 
@@ -347,6 +371,8 @@ contract Ardentis is
     emit EventsLib.Withdraw(id, msg.sender, onBehalf, receiver, assets, shares);
 
     IERC20(marketParams.loanToken).safeTransfer(receiver, assets);
+
+    require(_checkSupplyAssets(marketParams, onBehalf), ErrorsLib.REMAIN_SUPPLY_TOO_LOW);
 
     return (assets, shares);
   }
@@ -662,7 +688,7 @@ contract Ardentis is
       market[id].totalSupplyAssets += interest.toUint128();
 
       uint256 feeShares;
-      if (market[id].fee != 0) {
+      if (market[id].fee != 0 && feeRecipient != address(0)) {
         uint256 feeAmount = interest.wMulDown(market[id].fee);
         // The fee amount is subtracted from the total supply in this calculation to compensate for the fact
         // that total supply is already increased by the full interest (including the fee amount).

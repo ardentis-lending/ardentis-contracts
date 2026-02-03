@@ -13,6 +13,7 @@ import { IArdentisVault } from "../ardentis-vault/interfaces/IArdentisVault.sol"
 import { Id, IArdentis, MarketParams, Market } from "../ardentis/interfaces/IArdentis.sol";
 import { ErrorsLib } from "../ardentis/libraries/ErrorsLib.sol";
 import { UtilsLib } from "../ardentis/libraries/UtilsLib.sol";
+import { SafeTransferLib } from "solady/utils/SafeTransferLib.sol";
 
 /// @title ETH Provider for Ardentis Lending
 /// @author Ardentis
@@ -32,6 +33,10 @@ contract ETHProvider is UUPSUpgradeable, AccessControlEnumerableUpgradeable, IPr
   mapping(address => bool) public vaults;
 
   bytes32 public constant MANAGER = keccak256("MANAGER");
+
+  event AddVault(address indexed caller, address indexed vault);
+  event RemoveVault(address indexed caller, address indexed vault);
+  event Rescue(address indexed caller, address indexed token, address indexed to, uint256 amount);
 
   modifier onlyArdentis() {
     require(msg.sender == address(ARDENTIS), "not ardentis");
@@ -84,19 +89,19 @@ contract ETHProvider is UUPSUpgradeable, AccessControlEnumerableUpgradeable, IPr
   /// @param vault The address of the Ardentis vault to deposit into.
   /// @param shares The amount of shares to mint.
   /// @param receiver The address to receive the shares.
-  /// @return previewAssets The amount of assets equivalent to the minted shares.
-  function mint(address vault, uint256 shares, address receiver) public payable returns (uint256 previewAssets) {
+  /// @return assets The amount of assets equivalent to the minted shares.
+  function mint(address vault, uint256 shares, address receiver) public payable returns (uint256 assets) {
     require(vaults[vault], "vault not added");
     require(shares > 0, ErrorsLib.ZERO_ASSETS);
-    previewAssets = IArdentisVault(vault).previewMint(shares); // ceiling rounding
+    uint256 previewAssets = IArdentisVault(vault).previewMint(shares); // ceiling rounding
     require(msg.value >= previewAssets, "invalid ETH amount");
 
     IWETH(TOKEN).deposit{ value: previewAssets }();
     require(IWETH(TOKEN).approve(vault, previewAssets));
-    IArdentisVault(vault).mint(shares, receiver);
+    assets = IArdentisVault(vault).mint(shares, receiver);
 
-    if (msg.value > previewAssets) {
-      (bool success, ) = msg.sender.call{ value: msg.value - previewAssets }("");
+    if (msg.value > assets) {
+      (bool success, ) = msg.sender.call{ value: msg.value - assets }("");
       require(success, "transfer failed");
     }
   }
@@ -285,6 +290,7 @@ contract ETHProvider is UUPSUpgradeable, AccessControlEnumerableUpgradeable, IPr
     require(address(IArdentisVault(vault).ARDENTIS()) == address(ARDENTIS), "invalid ardentis vault");
     require(IArdentisVault(vault).asset() == TOKEN, "invalid asset");
     vaults[vault] = true;
+    emit AddVault(msg.sender, vault);
   }
 
   /// @dev Remove a Ardentis vault from the provider.
@@ -292,6 +298,7 @@ contract ETHProvider is UUPSUpgradeable, AccessControlEnumerableUpgradeable, IPr
     require(hasRole(MANAGER, msg.sender) || hasRole(DEFAULT_ADMIN_ROLE, msg.sender), ErrorsLib.UNAUTHORIZED);
     require(vaults[vault], "vault not added");
     delete vaults[vault];
+    emit RemoveVault(msg.sender, vault);
   }
 
   /// @dev Returns whether the sender is authorized to manage `onBehalf`'s positions.
@@ -299,6 +306,29 @@ contract ETHProvider is UUPSUpgradeable, AccessControlEnumerableUpgradeable, IPr
   /// @param onBehalf The address of the position owner.
   function isSenderAuthorized(address sender, address onBehalf) public view returns (bool) {
     return sender == onBehalf || ARDENTIS.isAuthorized(onBehalf, sender);
+  }
+
+  /// @dev Rescue native ETH or ERC20 tokens stuck in this contract.
+  function rescue(address token, address to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    require(to != address(0), ErrorsLib.ZERO_ADDRESS);
+
+    if (token == address(0)) {
+      uint256 balanceEth = address(this).balance;
+      uint256 rescueAmountEth = amount == 0 ? balanceEth : amount;
+      require(rescueAmountEth != 0, ErrorsLib.ZERO_ASSETS);
+      require(rescueAmountEth <= balanceEth, ErrorsLib.INSUFFICIENT_LIQUIDITY);
+      SafeTransferLib.safeTransferETH(to, rescueAmountEth);
+      emit Rescue(msg.sender, address(0), to, rescueAmountEth);
+      return;
+    }
+
+    require(token != TOKEN, "invalid asset");
+    uint256 balanceToken = SafeTransferLib.balanceOf(token, address(this));
+    uint256 rescueAmountToken = amount == 0 ? balanceToken : amount;
+    require(rescueAmountToken != 0, ErrorsLib.ZERO_ASSETS);
+    require(rescueAmountToken <= balanceToken, ErrorsLib.INSUFFICIENT_LIQUIDITY);
+    SafeTransferLib.safeTransfer(token, to, rescueAmountToken);
+    emit Rescue(msg.sender, token, to, rescueAmountToken);
   }
 
   receive() external payable {}
